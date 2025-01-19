@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "decorator"
+version = "0.1.0"
+description = "A Python tool for generating structured docstrings automatically."
+authors = ["Tejus Gupta <tejus3131@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+keywords = ["documentation", "docstring", "python", "automation", "metadata"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Documentation",
+]
+
+
+[tool.poetry.dependencies]
+python = "^3.13"
+astor = "^0.8.1"
+
+
+[tool.poetry.urls]
+homepage = "https://github.com/tejus3131/decorator"
+repository = "https://github.com/tejus3131/decorator"
+documentation = "https://decorator.readthedocs.io"
+issues = "https://github.com/tejus3131/decorator/issues"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+
+[tool.poetry.scripts]
+decorator = "decorator:main"
