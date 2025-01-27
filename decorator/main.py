@@ -1,390 +1,254 @@
-import ast
-import astor  # type: ignore
-import sys
+from decorator.generator import add_docstrings_to_file
+import json
+import os
+import click
+import re
+from pydantic import BaseModel
+from typing import Optional
 
 
-class DocstringGenerator(ast.NodeVisitor):
-    """
-    description: A class to generate structured docstrings for functions and classes.
-    """
+def validate_email(value: str) -> bool:
+    if not re.match(r"[^@]+@[^@]+\.[^@]+", value):
+        return False
+    return True
 
-    def __init__(self, *, name: str, github_username: str, email: str):
-        self.updated_code = ""
-        self.author_info = {
-            "name": name,
-            "github": github_username,
-            "email": email,
-            "github_url": f"https://github.com/{github_username}",
-        }
 
-    def extract_class_metadata(self, node):
-        """description: Extract metadata from comments in the class's body."""
+def validate_github_username(value: str) -> bool:
+    if not re.match(r"^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$", value):
+        return False
+    return True
 
-        metadata = {
-            "name": node.name,
-            "description": "",
-            "methods": [],
-            "classes": [],
-            "extra": [],
-        }
-        if not node.body:
-            return metadata
 
-        doc_strings = []
-        functions = []
-        classes = []
+def validate_name(value: str) -> bool:
+    if not re.match(r"^[a-zA-Z\s]*$", value):
+        return False
+    return True
 
-        for stmt in node.body:
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
-                doc_strings.append(stmt.value.s)
-                metadata["extra"].append(stmt)
-            elif isinstance(stmt, ast.FunctionDef):
-                functions.append(stmt)
-            elif isinstance(stmt, ast.ClassDef):
-                classes.append(stmt)
 
-        for doc_string in doc_strings:
-            if doc_string.startswith("description:"):
-                metadata["description"] = doc_string.replace("description:", "")
+class Settings(BaseModel):
+    name: str
+    github_username: str
+    email: str
 
-        metadata["methods"] = functions
-        metadata["classes"] = classes
+    @staticmethod
+    def empty() -> "Settings":
+        return Settings(name="", github_username="", email="")
 
-        return metadata
+    def is_valid(self) -> tuple[bool, str]:
+        if not self.name:
+            return False, "Name is required"
+        if not validate_name(self.name):
+            return False, "Invalid name"
+        if not self.github_username:
+            return False, "GitHub username is required"
+        if not validate_github_username(self.github_username):
+            return False, "Invalid GitHub username"
+        if not self.email:
+            return False, "Email is required"
+        if not validate_email(self.email):
+            return False, "Invalid email"
+        return True, ""
 
-    def generate_class_docstring(self, metadata):
-        """description: Generate a structured docstring based on extracted metadata."""
-        docstring_lines = [
-            f"# {metadata['name']}",
-            "---",
-            f"### {metadata['description']}",
-            "---",
-        ]
-        flag = False
-        if metadata["methods"]:
-            flag = True
-            docstring_lines.append("## Methods:")
-            for method in metadata["methods"]:
-                if method.name.startswith("__"):
-                    continue
-                docstring_lines.append(
-                    f"- `{method.name}()`: {self.extract_function_metadata(method)
-                                            ['description']}"
-                )
-            docstring_lines.append("")
-        if metadata["classes"]:
-            flag = True
-            docstring_lines.append("## Classes:")
-            for class_ in metadata["classes"]:
-                docstring_lines.append(f"- `{class_.name}`")
-            docstring_lines.append("")
-        if flag:
-            docstring_lines.append("---")
-        docstring_lines.append(
-            f"Author: `{self.author_info['name']}` <[{self.author_info['github']}]({self.author_info['github_url']}), {self.author_info['email']}>"
+    @staticmethod
+    def create(settings_path: str, name: "str", github_username: str, email: str) -> "Settings":
+        settings = Settings(
+            name=name,
+            github_username=github_username,
+            email=email
         )
-        return "\n".join(docstring_lines)
+        with open(settings_path, "w") as f:
+            json.dump(settings.model_dump(), f)
+        return settings
 
-    def visit_ClassDef(self, node):
-        metadata = self.extract_class_metadata(node)
-        print(metadata)
-        for item in metadata["extra"]:
-            node.body.remove(item)
-        enhanced_docstring = self.generate_class_docstring(metadata)
-        node.body.insert(0, ast.Expr(value=ast.Constant(s=enhanced_docstring)))
-        self.generic_visit(node)
+    @staticmethod
+    def load(settings_path: str) -> Optional["Settings"]:
+        if not os.path.exists(settings_path):
+            return None
+        with open(settings_path, "r") as f:
+            data = json.load(f)
+            try:
+                return Settings.model_validate(data)
+            except Exception:
+                return None
 
-    def extract_function_metadata(self, node):
-        """description: Extract metadata from comments in the function's body."""
-        print(ast.dump(node, indent=4))
-        metadata = {
-            "name": node.name,
-            "description": None,
-            "parameters": [],
-            "exception_message": None,
-            "exceptions": [],
-            "returns_message": None,
-            "returns": "",
-            "is_return": False,
-            "example": None,
-            "extra": [],
-        }
-        if not node.body:
-            return metadata
+    def save(self, settings_path: str):
+        with open(settings_path, "w") as f:
+            json.dump(self.model_dump(), f)
 
-        params = node.args.args if node.args.args else []
-        param_name = {
-            param.arg: {
-                "type": param.annotation.id if param.annotation else "...",
-                "msg": None,
-            }
-            for param in params
-        }
 
-        # return_args =
+SETTINGS_PATH = os.path.expanduser("~/.docarator_settings.json")
+EXTENSION = ".decorator-draft.py"
 
-        doc_strings = []
-        exceptions = []
-        returns = None
+@click.command(name="draft")
+@click.argument("input_file", type=str, required=True)
+@click.option("-o", "--output_file", type=str, help="The output file to save the result")
+@click.option("--skip-draft", "-sd", is_flag=True, default=False, help="To directly write the output without draft file.")
+def draft(input_file: str, output_file: str, skip_draft: bool) -> None:
+    settings = Settings.load(SETTINGS_PATH)
+    if settings is None:
+        click.echo("Invalid settings", err=True)
+        click.echo("Please run `docarator configure` to set the settings")
+        return
 
-        if node.returns:
-            if isinstance(node.returns, ast.Name):
-                returns = node.returns.id
-            elif isinstance(node.returns, ast.BinOp):
-                if isinstance(node.returns.left, ast.Name):
-                    left = node.returns.left.id
-                elif isinstance(node.returns.left, ast.Constant):
-                    left = node.returns.left.value
-                
-                if isinstance(node.returns.right, ast.Name):
-                    right = node.returns.right.id
-                elif isinstance(node.returns.right, ast.Constant):
-                    right = node.returns.right.value
+    if not output_file:
+        output_file = input_file
 
-                returns = f"{left} or {right}"
+    if not skip_draft:
+        print(output_file)
+        output_file = os.path.splitext(output_file)[0] + EXTENSION
+        print(output_file)
 
-        for stmt in node.body:
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
-                doc_strings.append(stmt.value.s)
-                metadata["extra"].append(stmt)
-            elif isinstance(stmt, ast.Raise):
-                exceptions.append(
-                    (stmt.exc.id, stmt.exe.args.value if stmt.exc.args else "")
-                )
-            elif isinstance(stmt, ast.Return):
-                metadata["is_return"] = True
+    result, message = add_docstrings_to_file(
+        settings.name, settings.github_username, settings.email, input_file, output_file)
+    click.echo(message, err=result)
 
-        for doc_string in doc_strings:
-            if doc_string.startswith("description:"):
-                metadata["description"] = doc_string.replace("description:", "")
-            elif doc_string.startswith("example:"):
-                metadata["example"] = doc_string.replace("example:", "")
-            elif doc_string.startswith("return:"):
-                metadata["returns_message"] = doc_string.replace("return:", "")
-            elif doc_string.startswith("exception:"):
-                metadata["exception_message"] = doc_string.replace("exception:", "")
-            else:
-                for param in param_name.keys():
-                    if doc_string.startswith(f"{param}:"):
-                        msg = doc_string.replace(f"{param}:", "")
-                        param_name[param]["msg"] = msg
-                        break
 
-        metadata["parameters"] = param_name
-        metadata["exceptions"] = exceptions
-        metadata["returns"] = returns
+@click.command(name="finalize")
+@click.argument("decorator_draft_file", type=str, required=True)
+@click.option("--save-draft", "-sd", is_flag=True, default=False, help="To not remove the draft file.")
+def finalize(decorator_draft_file: str, save_draft: bool) -> None:
+    if not os.path.exists(decorator_draft_file):
+        click.echo("Invalid decorator draft file path.", err=True)
+        return
 
-        return metadata
+    output_file = os.path.splitext(decorator_draft_file)[0] + ".py"
 
-    def generate_function_docstring(self, metadata):
-        """description: Generate a structured docstring based on extracted metadata."""
-        docstring_lines = [
-            f"# {metadata['name']}",
-            "---",
-            f"### {metadata['description']}",
-            "---",
-        ]
-        flag = False
-        if metadata["parameters"]:
-            flag = True
-            docstring_lines.append("## Parameters:")
-            for param, details in metadata["parameters"].items():
-                if param == "self" or param == "cls":
-                    docstring_lines.append(f"- `{param}`")
-                else:
-                    docstring_lines.append(
-                        f"- `{param}`: {details['type']} - {details['msg']
-                                                            if details['msg'] else '...'}"
-                    )
-            docstring_lines.append("")
-        if metadata["returns"] or metadata["returns_message"]:
-            flag = True
-            docstring_lines.append("## Returns:")
-            docstring_lines.append(
-                f"- {metadata['returns']} - {
-                    metadata['returns_message'] if metadata['returns_message'] else '...'}"
-            )
-            docstring_lines.append("")
-        elif metadata["is_return"]:
-            flag = True
-            docstring_lines.append("## Returns:")
-            docstring_lines.append(f"- Any - ...")
-            docstring_lines.append("")
-        if metadata["exception_message"] or metadata["exceptions"]:
+    with open(decorator_draft_file, "r") as ddf, open(output_file, "w") as of:
+        of.write(ddf.read())
 
-            flag = True
-            docstring_lines.append("## Raises:")
-            if metadata["exception_message"]:
-                docstring_lines.append(f"- {metadata['exception_message']}")
-            for exception in metadata["exceptions"]:
-                docstring_lines.append(f"- `{exception[0]}`: {exception[1]}")
-            docstring_lines.append("")
-        if flag:
-            docstring_lines.append("---")
-        if metadata["example"]:
-            docstring_lines.append("## Example:")
-            docstring_lines.append(f"```python\n{metadata['example']}\n```")
-            docstring_lines.append("---")
-        docstring_lines.append(
-            f"Author: `{self.author_info['name']}` <[{self.author_info['github']}]({
-                self.author_info['github_url']}), {self.author_info['email']}>"
-        )
-        return "\n".join(docstring_lines)
+    click.echo(f"Finalized Draft: {decorator_draft_file}")
 
-    def visit_FunctionDef(self, node):
-        metadata = self.extract_function_metadata(node)
-        print(metadata)
-        for item in metadata["extra"]:
-            node.body.remove(item)
-        enhanced_docstring = self.generate_function_docstring(metadata)
-        node.body.insert(0, ast.Expr(value=ast.Constant(s=enhanced_docstring)))
-        self.generic_visit(node)
+    if not save_draft:
+        os.remove(decorator_draft_file)
+        click.echo(f"Draft file {decorator_draft_file} removed.")
+    
 
-    def extract_async_function_metadata(self, node):
+@click.command(name="configure")
+@click.option("--name", type=str, help="Set the default name")
+@click.option("--github-username", type=str, help="Set the default GitHub username")
+@click.option("--email", type=str, help="Set the default email")
+def configure(name: str, github_username: str, email: str) -> None:
+    settings = Settings.load(SETTINGS_PATH)
+    if settings is None:
+        settings = Settings.empty()
+
+    if name:
+        if validate_name(name):
+            settings.name = name
+        else:
+            click.echo(f"Invalid name: {name}", err=True)
+            return
+    if github_username:
+        if validate_github_username(github_username):
+            settings.github_username = github_username
+        else:
+            click.echo(f"Invalid GitHub username: {github_username}", err=True)
+            return
+    if email:
+        if validate_email(email):
+            settings.email = email
+        else:
+            click.echo(f"Invalid email: {email}", err=True)
+            return
+        
+    is_valid, message = settings.is_valid()
+
+    if is_valid:
+        settings.save(SETTINGS_PATH)
+        click.echo("Settings saved successfully")
+    else:
+        click.echo(message, err=True)
+        click.echo("Please rerun `docarator configure` to set the settings")
+
+@click.command(name="rules")
+@click.option("--class-only", "-c", is_flag=True, default=False, help="To display only `class` related docstrings rules.")
+@click.option("--function-only", "-f", is_flag=True, default=False, help="To display only `function` related docstrings rules.")
+def rules(class_only: bool, function_only: bool) -> None:
+
+    if class_only:
+        click.echo(click.style("Here are some simple rules to follow for adding docstrings to your classes:\n", fg="cyan"))
+
+        click.echo(click.style("Class Docstrings:", fg="green"))
+        click.echo(click.style("    - Start with `description:` followed by a brief description of the class.", fg="yellow"))
+        click.echo(click.style("    - Example:", fg="yellow"))
+        click.echo(click.style('''
+        ```python
         """
-        Extract metadata from comments in the async function's body.
+        description: A class to handle user authentication.
         """
-        metadata = {
-            "name": node.name,
-            "description": "...",
-            "parameters": [],
-            "exception_message": "...",
-            "exceptions": [],
-            "returns_message": "...",
-            "returns": "",
-            "example": None,
-            "extra": [],
-        }
-        if not node.body:
-            return metadata
+        ```
+        ''', fg="white"))
 
-        params = node.args.args if node.args.args else []
-        param_name = {
-            param.arg: {
-                "type": param.annotation.id if param.annotation else "...",
-                "msg": None,
-            }
-            for param in params
-        }
+        click.echo(click.style("These rules will help the `Decorator` to extract and generate structured docstrings for your `class`.", fg="cyan"))
 
-        # return_args =
+    elif function_only:
+        click.echo(click.style("Here are some simple rules to follow for adding docstrings to your functions:\n", fg="cyan"))
 
-        doc_strings = []
-        exceptions = []
-        returns = node.returns.id if node.returns else None
-
-        for stmt in node.body:
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant):
-                doc_strings.append(stmt.value.s)
-                metadata["extra"].append(stmt)
-            elif isinstance(stmt, ast.Raise):
-                exceptions.append(
-                    (stmt.exc.id, stmt.exe.args.value if stmt.exc.args else "")
-                )
-
-        for doc_string in doc_strings:
-            if doc_string.startswith("description:"):
-                metadata["description"] = doc_string.replace("description:", "")
-            elif doc_string.startswith("example:"):
-                metadata["example"] = doc_string.replace("example:", "")
-            elif doc_string.startswith("return:"):
-                metadata["returns_message"] = doc_string.replace("return:", "")
-            elif doc_string.startswith("exception:"):
-                metadata["exception_message"] = doc_string.replace("exception:", "")
-            else:
-                for param in param_name.keys():
-                    if doc_string.startswith(f"{param}:"):
-                        msg = doc_string.replace(f"{param}:", "")
-                        param_name[param]["msg"] = msg
-                        break
-
-        metadata["parameters"] = param_name
-        metadata["exceptions"] = exceptions
-        metadata["returns"] = returns
-
-        return metadata
-
-    def generate_async_function_docstring(self, metadata):
+        click.echo(click.style("Function Docstrings:", fg="green"))
+        click.echo(click.style("    - Start with `description:` followed by a brief description of the function.", fg="yellow"))
+        click.echo(click.style("    - For each parameter, use `param_name:` followed by a brief description.", fg="yellow"))
+        click.echo(click.style("    - For return values, use `return:` followed by a brief description.", fg="yellow"))
+        click.echo(click.style("    - For exceptions, use `exception:` followed by a brief description.", fg="yellow"))
+        click.echo(click.style("    - Example:", fg="yellow"))
+        click.echo(click.style('''
+        ```python
         """
-        Generate a structured docstring based on extracted metadata.
+        description: Authenticate a user based on username and password.
+        username: The username of the user.
+        password: The password of the user.
+        return: True if authentication is successful, False otherwise.
+        exception: ValueError if the username or password is invalid.
         """
-        docstring_lines = [
-            f"# {metadata['name']}",
-            "---",
-            f"### {metadata['description']}",
-            "---",
-        ]
-        flag = False
-        if metadata["parameters"]:
-            flag = True
-            docstring_lines.append("## Parameters:")
-            for param, details in metadata["parameters"].items():
-                if param == "self" or param == "cls":
-                    docstring_lines.append(f"- `{param}`")
-                else:
-                    docstring_lines.append(
-                        f"- `{param}`: {details['type']} - {details['msg']
-                                                            if details['msg'] else '...'}"
-                    )
-            docstring_lines.append("")
-        if metadata["returns"] or metadata["returns_message"]:
-            flag = True
-            docstring_lines.append("## Returns:")
-            docstring_lines.append(
-                f"- {metadata['returns']} - {metadata['returns_message']
-                                             if metadata['returns_message'] else '...'}"
-            )
-            docstring_lines.append("")
-        if metadata["exception_message"] or metadata["exceptions"]:
-            flag = True
-            docstring_lines.append("## Raises:")
-            if metadata["exception_message"]:
-                docstring_lines.append(f"- {metadata['exception_message']}")
-            for exception in metadata["exceptions"]:
-                docstring_lines.append(f"- `{exception[0]}`: {exception[1]}")
-            docstring_lines.append("")
-        if flag:
-            docstring_lines.append("---")
-        if metadata["example"]:
-            docstring_lines.append("## Example:")
-            docstring_lines.append(f"```python\n{metadata['example']}\n```")
-            docstring_lines.append("---")
-        docstring_lines.append(
-            f"Author: `{self.author_info['name']}` <[{self.author_info['github']}]({self.author_info['github_url']}), {self.author_info['email']}>"
-        )
-        return "\n".join(docstring_lines)
+        ```
+        ''', fg="white"))
 
-    def visit_AsyncFunctionDef(self, node):
-        metadata = self.extract_async_function_metadata(node)
-        print(metadata)
-        for item in metadata["extra"]:
-            node.body.remove(item)
-        enhanced_docstring = self.generate_async_function_docstring(metadata)
-        node.body.insert(0, ast.Expr(value=ast.Str(s=enhanced_docstring)))
-        self.generic_visit(node)
+        click.echo(click.style("These rules will help the `Decorator` to extract and generate structured docstrings for your `function.", fg="cyan"))
+            
+    else:
+        click.echo(click.style("Here are some simple rules to follow for adding docstrings to your classes and functions:\n", fg="cyan"))
+
+        click.echo(click.style("1. Class Docstrings:", fg="green"))
+        click.echo(click.style("    - Start with `description:` followed by a brief description of the class.", fg="yellow"))
+        click.echo(click.style("    - Example:", fg="yellow"))
+        click.echo(click.style('''
+        ```python
+        """
+        description: A class to handle user authentication.
+        """
+        ```
+        ''', fg="white"))
+
+        click.echo(click.style("2. Function Docstrings:", fg="green"))
+        click.echo(click.style("    - Start with `description:` followed by a brief description of the function.", fg="yellow"))
+        click.echo(click.style("    - For each parameter, use `param_name:` followed by a brief description.", fg="yellow"))
+        click.echo(click.style("    - For return values, use `return:` followed by a brief description.", fg="yellow"))
+        click.echo(click.style("    - For exceptions, use `exception:` followed by a brief description.", fg="yellow"))
+        click.echo(click.style("    - Example:", fg="yellow"))
+        click.echo(click.style('''
+        ```python
+        """
+        description: Authenticate a user based on username and password.
+        username: The username of the user.
+        password: The password of the user.
+        return: True if authentication is successful, False otherwise.
+        exception: ValueError if the username or password is invalid.
+        """
+        ```
+        ''', fg="white"))
+
+        click.echo(click.style("These rules will help the `Decorator` to extract and generate structured docstrings for your code.", fg="cyan"))
 
 
-def add_docstrings_to_file(name, github_username, email, input_file, output_file):
-    """
-    description: Add structured docstrings to a file.
-    """
-    with open(input_file, "r") as f:
-        source_code = f.read()
-    try:
-        tree = ast.parse(source_code)
-    except Exception as e:
-        sys.exit(
-            f"Error in {input_file}\n\n{e.__class__.__name__}: {
-                e.args[0]} at line {e.args[1][1]} in {input_file}"
-        )
 
-    docstring_generator = DocstringGenerator(
-        name=name, github_username=github_username, email=email
-    )
+@click.group()
+def main() -> None:
+    pass
 
-    docstring_generator.visit(tree)
 
-    updated_code = astor.to_source(tree)
+main.add_command(draft)
+main.add_command(finalize)
+main.add_command(configure)
+main.add_command(rules)
 
-    with open(output_file, "w") as f:
-        f.write(updated_code)
+if __name__ == "__main__":
+    main()

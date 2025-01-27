@@ -18,8 +18,11 @@ classifiers = [
 
 
 [tool.poetry.dependencies]
-python = "^3.13"
+python = ">=3.12,<3.14"
 astor = "^0.8.1"
+click = "^8.1.8"
+pydantic = "^2.10.6"
+pyinstaller = "^6.11.1"
 
 
 [tool.poetry.urls]
