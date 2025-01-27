@@ -50,12 +50,10 @@ class Settings(BaseModel):
         return True, ""
 
     @staticmethod
-    def create(settings_path: str, name: "str", github_username: str, email: str) -> "Settings":
-        settings = Settings(
-            name=name,
-            github_username=github_username,
-            email=email
-        )
+    def create(
+        settings_path: str, name: "str", github_username: str, email: str
+    ) -> "Settings":
+        settings = Settings(name=name, github_username=github_username, email=email)
         with open(settings_path, "w") as f:
             json.dump(settings.model_dump(), f)
         return settings
@@ -79,10 +77,19 @@ class Settings(BaseModel):
 SETTINGS_PATH = os.path.expanduser("~/.docarator_settings.json")
 EXTENSION = ".decorator-draft.py"
 
+
 @click.command(name="draft")
 @click.argument("input_file", type=str, required=True)
-@click.option("-o", "--output_file", type=str, help="The output file to save the result")
-@click.option("--skip-draft", "-sd", is_flag=True, default=False, help="To directly write the output without draft file.")
+@click.option(
+    "-o", "--output_file", type=str, help="The output file to save the result"
+)
+@click.option(
+    "--skip-draft",
+    "-sd",
+    is_flag=True,
+    default=False,
+    help="To directly write the output without draft file.",
+)
 def draft(input_file: str, output_file: str, skip_draft: bool) -> None:
     settings = Settings.load(SETTINGS_PATH)
     if settings is None:
@@ -99,13 +106,20 @@ def draft(input_file: str, output_file: str, skip_draft: bool) -> None:
         print(output_file)
 
     result, message = add_docstrings_to_file(
-        settings.name, settings.github_username, settings.email, input_file, output_file)
+        settings.name, settings.github_username, settings.email, input_file, output_file
+    )
     click.echo(message, err=result)
 
 
 @click.command(name="finalize")
 @click.argument("decorator_draft_file", type=str, required=True)
-@click.option("--save-draft", "-sd", is_flag=True, default=False, help="To not remove the draft file.")
+@click.option(
+    "--save-draft",
+    "-sd",
+    is_flag=True,
+    default=False,
+    help="To not remove the draft file.",
+)
 def finalize(decorator_draft_file: str, save_draft: bool) -> None:
     if not os.path.exists(decorator_draft_file):
         click.echo("Invalid decorator draft file path.", err=True)
@@ -121,7 +135,7 @@ def finalize(decorator_draft_file: str, save_draft: bool) -> None:
     if not save_draft:
         os.remove(decorator_draft_file)
         click.echo(f"Draft file {decorator_draft_file} removed.")
-    
+
 
 @click.command(name="configure")
 @click.option("--name", type=str, help="Set the default name")
@@ -150,7 +164,7 @@ def configure(name: str, github_username: str, email: str) -> None:
         else:
             click.echo(f"Invalid email: {email}", err=True)
             return
-        
+
     is_valid, message = settings.is_valid()
 
     if is_valid:
@@ -160,37 +174,96 @@ def configure(name: str, github_username: str, email: str) -> None:
         click.echo(message, err=True)
         click.echo("Please rerun `docarator configure` to set the settings")
 
-@click.command(name="rules")
-@click.option("--class-only", "-c", is_flag=True, default=False, help="To display only `class` related docstrings rules.")
-@click.option("--function-only", "-f", is_flag=True, default=False, help="To display only `function` related docstrings rules.")
-def rules(class_only: bool, function_only: bool) -> None:
 
+@click.command(name="rules")
+@click.option(
+    "--class-only",
+    "-c",
+    is_flag=True,
+    default=False,
+    help="To display only `class` related docstrings rules.",
+)
+@click.option(
+    "--function-only",
+    "-f",
+    is_flag=True,
+    default=False,
+    help="To display only `function` related docstrings rules.",
+)
+def rules(class_only: bool, function_only: bool) -> None:
     if class_only:
-        click.echo(click.style("Here are some simple rules to follow for adding docstrings to your classes:\n", fg="cyan"))
+        click.echo(
+            click.style(
+                "Here are some simple rules to follow for adding docstrings to your classes:\n",
+                fg="cyan",
+            )
+        )
 
         click.echo(click.style("Class Docstrings:", fg="green"))
-        click.echo(click.style("    - Start with `description:` followed by a brief description of the class.", fg="yellow"))
+        click.echo(
+            click.style(
+                "    - Start with `description:` followed by a brief description of the class.",
+                fg="yellow",
+            )
+        )
         click.echo(click.style("    - Example:", fg="yellow"))
-        click.echo(click.style('''
+        click.echo(
+            click.style(
+                '''
         ```python
         """
         description: A class to handle user authentication.
         """
         ```
-        ''', fg="white"))
+        ''',
+                fg="white",
+            )
+        )
 
-        click.echo(click.style("These rules will help the `Decorator` to extract and generate structured docstrings for your `class`.", fg="cyan"))
+        click.echo(
+            click.style(
+                "These rules will help the `Decorator` to extract and generate structured docstrings for your `class`.",
+                fg="cyan",
+            )
+        )
 
     elif function_only:
-        click.echo(click.style("Here are some simple rules to follow for adding docstrings to your functions:\n", fg="cyan"))
+        click.echo(
+            click.style(
+                "Here are some simple rules to follow for adding docstrings to your functions:\n",
+                fg="cyan",
+            )
+        )
 
         click.echo(click.style("Function Docstrings:", fg="green"))
-        click.echo(click.style("    - Start with `description:` followed by a brief description of the function.", fg="yellow"))
-        click.echo(click.style("    - For each parameter, use `param_name:` followed by a brief description.", fg="yellow"))
-        click.echo(click.style("    - For return values, use `return:` followed by a brief description.", fg="yellow"))
-        click.echo(click.style("    - For exceptions, use `exception:` followed by a brief description.", fg="yellow"))
+        click.echo(
+            click.style(
+                "    - Start with `description:` followed by a brief description of the function.",
+                fg="yellow",
+            )
+        )
+        click.echo(
+            click.style(
+                "    - For each parameter, use `param_name:` followed by a brief description.",
+                fg="yellow",
+            )
+        )
+        click.echo(
+            click.style(
+                "    - For return values, use `return:` followed by a brief description.",
+                fg="yellow",
+            )
+        )
+        click.echo(
+            click.style(
+                "    - For exceptions, use `exception:` followed by a brief description.",
+                fg="yellow",
+            )
+        )
         click.echo(click.style("    - Example:", fg="yellow"))
-        click.echo(click.style('''
+        click.echo(
+            click.style(
+                '''
         ```python
         """
         description: Authenticate a user based on username and password.
@@ -200,31 +273,76 @@ def rules(class_only: bool, function_only: bool) -> None:
         exception: ValueError if the username or password is invalid.
         """
         ```
-        ''', fg="white"))
+        ''',
+                fg="white",
+            )
+        )
 
-        click.echo(click.style("These rules will help the `Decorator` to extract and generate structured docstrings for your `function.", fg="cyan"))
-            
+        click.echo(
+            click.style(
+                "These rules will help the `Decorator` to extract and generate structured docstrings for your `function.",
+                fg="cyan",
+            )
+        )
+
     else:
-        click.echo(click.style("Here are some simple rules to follow for adding docstrings to your classes and functions:\n", fg="cyan"))
+        click.echo(
+            click.style(
+                "Here are some simple rules to follow for adding docstrings to your classes and functions:\n",
+                fg="cyan",
+            )
+        )
 
         click.echo(click.style("1. Class Docstrings:", fg="green"))
-        click.echo(click.style("    - Start with `description:` followed by a brief description of the class.", fg="yellow"))
+        click.echo(
+            click.style(
+                "    - Start with `description:` followed by a brief description of the class.",
+                fg="yellow",
+            )
+        )
         click.echo(click.style("    - Example:", fg="yellow"))
-        click.echo(click.style('''
+        click.echo(
+            click.style(
+                '''
         ```python
         """
         description: A class to handle user authentication.
         """
         ```
-        ''', fg="white"))
+        ''',
+                fg="white",
+            )
+        )
 
         click.echo(click.style("2. Function Docstrings:", fg="green"))
-        click.echo(click.style("    - Start with `description:` followed by a brief description of the function.", fg="yellow"))
-        click.echo(click.style("    - For each parameter, use `param_name:` followed by a brief description.", fg="yellow"))
-        click.echo(click.style("    - For return values, use `return:` followed by a brief description.", fg="yellow"))
-        click.echo(click.style("    - For exceptions, use `exception:` followed by a brief description.", fg="yellow"))
+        click.echo(
+            click.style(
+                "    - Start with `description:` followed by a brief description of the function.",
+                fg="yellow",
+            )
+        )
+        click.echo(
+            click.style(
+                "    - For each parameter, use `param_name:` followed by a brief description.",
+                fg="yellow",
+            )
+        )
+        click.echo(
+            click.style(
+                "    - For return values, use `return:` followed by a brief description.",
+                fg="yellow",
+            )
+        )
+        click.echo(
+            click.style(
+                "    - For exceptions, use `exception:` followed by a brief description.",
+                fg="yellow",
+            )
+        )
         click.echo(click.style("    - Example:", fg="yellow"))
-        click.echo(click.style('''
+        click.echo(
+            click.style(
+                '''
         ```python
         """
         description: Authenticate a user based on username and password.
@@ -234,10 +352,17 @@ def rules(class_only: bool, function_only: bool) -> None:
         exception: ValueError if the username or password is invalid.
         """
         ```
-        ''', fg="white"))
+        ''',
+                fg="white",
+            )
+        )
 
-        click.echo(click.style("These rules will help the `Decorator` to extract and generate structured docstrings for your code.", fg="cyan"))
-
+        click.echo(
+            click.style(
+                "These rules will help the `Decorator` to extract and generate structured docstrings for your code.",
+                fg="cyan",
+            )
+        )
 
 
 @click.group()

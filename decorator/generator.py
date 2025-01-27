@@ -45,8 +45,7 @@ class DocstringGenerator(ast.NodeVisitor):
 
         for doc_string in doc_strings:
             if doc_string.startswith("description:"):
-                metadata["description"] = doc_string.replace(
-                    "description:", "")
+                metadata["description"] = doc_string.replace("description:", "")
 
         metadata["methods"] = functions
         metadata["classes"] = classes
@@ -156,15 +155,13 @@ class DocstringGenerator(ast.NodeVisitor):
 
         for doc_string in doc_strings:
             if doc_string.startswith("description:"):
-                metadata["description"] = doc_string.replace(
-                    "description:", "")
+                metadata["description"] = doc_string.replace("description:", "")
             elif doc_string.startswith("example:"):
                 metadata["example"] = doc_string.replace("example:", "")
             elif doc_string.startswith("return:"):
                 metadata["returns_message"] = doc_string.replace("return:", "")
             elif doc_string.startswith("exception:"):
-                metadata["exception_message"] = doc_string.replace(
-                    "exception:", "")
+                metadata["exception_message"] = doc_string.replace("exception:", "")
             else:
                 for param in param_name.keys():
                     if doc_string.startswith(f"{param}:"):
@@ -210,10 +207,9 @@ class DocstringGenerator(ast.NodeVisitor):
         elif metadata["is_return"]:
             flag = True
             docstring_lines.append("## Returns:")
-            docstring_lines.append(f"- Any - ...")
+            docstring_lines.append("- Any - ...")
             docstring_lines.append("")
         if metadata["exception_message"] or metadata["exceptions"]:
-
             flag = True
             docstring_lines.append("## Raises:")
             if metadata["exception_message"]:
@@ -285,15 +281,13 @@ class DocstringGenerator(ast.NodeVisitor):
 
         for doc_string in doc_strings:
             if doc_string.startswith("description:"):
-                metadata["description"] = doc_string.replace(
-                    "description:", "")
+                metadata["description"] = doc_string.replace("description:", "")
             elif doc_string.startswith("example:"):
                 metadata["example"] = doc_string.replace("example:", "")
             elif doc_string.startswith("return:"):
                 metadata["returns_message"] = doc_string.replace("return:", "")
             elif doc_string.startswith("exception:"):
-                metadata["exception_message"] = doc_string.replace(
-                    "exception:", "")
+                metadata["exception_message"] = doc_string.replace("exception:", "")
             else:
                 for param in param_name.keys():
                     if doc_string.startswith(f"{param}:"):
@@ -368,12 +362,8 @@ class DocstringGenerator(ast.NodeVisitor):
 
 
 def add_docstrings_to_file(
-        name,
-        github_username,
-        email,
-        input_file,
-        output_file
-) ->tuple[bool, str]:
+    name, github_username, email, input_file, output_file
+) -> tuple[bool, str]:
     """
     description: Add structured docstrings to a file.
     """
@@ -382,7 +372,10 @@ def add_docstrings_to_file(
     try:
         tree = ast.parse(source_code)
     except Exception as e:
-        return False, f"Error in {input_file}\n\n{e.__class__.__name__}: {e.args[0]} at line {e.args[1][1]} in {input_file}"
+        return (
+            False,
+            f"Error in {input_file}\n\n{e.__class__.__name__}: {e.args[0]} at line {e.args[1][1]} in {input_file}",
+        )
 
     docstring_generator = DocstringGenerator(
         name=name, github_username=github_username, email=email
@@ -393,7 +386,7 @@ def add_docstrings_to_file(
         updated_code = astor.to_source(tree)
     except Exception as e:
         return False, str(e)
-    
+
     if os.path.exists(output_file):
         os.remove(output_file)
     elif not os.path.exists(os.path.dirname(output_file)):
